@@ -25,7 +25,7 @@ LLM_PID=$!
 
 # Start embedding server (Qwen3-Embedding)
 echo "Starting embedding server on port 8081..."
-llama-server -hf Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0 --embeddings --port 8081 &
+llama-server -hf Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0 --embeddings --port 8081 --pooling cls &
 EMBED_PID=$!
 
 # Wait a bit for servers to start up
