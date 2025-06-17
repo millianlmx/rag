@@ -24,6 +24,7 @@ async def process_files(files: Union[List[cl.File], List[AskFileResponse]], init
             # Generate unique ids for each chunk
             ids = [f"{f.id}_{i}" for i in range(len(chunks))]
             documents = [chunk["chunk"] for chunk in chunks]
+            # embeddings = [(await llama_cpp.embed([chunk["chunk"]]))[0] for chunk in chunks]
             embeddings = [(await llama_cpp.embed([chunk["chunk"]]))[0] for chunk in chunks]
             metadatas = [{"file_name": f.name, "chunk_index": chunk["id"], "file_path": f.path} for i, chunk in enumerate(chunks)]
             storage.store_vectors(
@@ -75,7 +76,7 @@ Provided Document:
     context = "\n".join([f"Document: {result['document']}\nMetadata: {result['metadata']}" for result in results])
     # call the LLM with the query and context
     response = await llama_cpp.chat(
-        messages=[
+        messages=[x
             {"role": "system", "content": "Tu es un assistant utile qui répond aux questions en utilisant les documents fournis. Utilise en piorité le document `Provided Document` et ensuite les documents de la base de connaissances."},
             {"role": "user", "content": f"Knowledge base: {context}\n\nQuery: {query}"}
         ]
@@ -93,3 +94,5 @@ Provided Document:
 
     # send the response back to the user
     await cl.Message(content=response, elements=elements).send()
+    
+

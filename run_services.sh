@@ -34,8 +34,8 @@ sleep 10
 
 # Start Chainlit application
 echo "Starting Chainlit application..."
-chainlit run main.py &
-CHAINLIT_PID=$!
+#chainlit run main.py &
+#CHAINLIT_PID=$!
 
 echo "All services started!"
 echo "LLM Server PID: $LLM_PID"
