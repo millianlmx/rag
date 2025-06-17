@@ -2,6 +2,6 @@ PyPDF2
 python-pptx
 python-docx
 chainlit
-chromadb
 openai
-scipy
+numpy
+sentence-transformers

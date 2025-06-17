@@ -8,7 +8,7 @@ A Retrieval-Augmented Generation (RAG) system built with Chainlit that allows yo
 - **Text Processing**: Automatic text extraction and chunking (~200 words per chunk)
 - **Vector Storage**: ChromaDB for storing document embeddings
 - **Local LLM**: Uses llama.cpp with Gemma-3-4B-IT model
-- **Embeddings**: Qwen3-Embedding-0.6B model for text embeddings
+- **Embeddings**: SentenceTransformers (Lajavaness/sentence-camembert-large model) for text embeddings
 - **Interactive UI**: Chainlit-based web interface
 - **File Management**: Upload files via deposit zone or chat attachments
 
@@ -43,7 +43,7 @@ A Retrieval-Augmented Generation (RAG) system built with Chainlit that allows yo
 The system requires two models to be available through llama.cpp:
 
 1. **LLM Model**: `ggml-org/gemma-3-4b-it-GGUF`
-2. **Embedding Model**: `Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0`
+2. **Embedding Model**: SentenceTransformers will automatically download the `Lajavaness/sentence-camembert-large` model on first use
 
 These will be automatically downloaded by llama-server when first used.
 
