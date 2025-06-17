@@ -6,8 +6,11 @@ from utils.doc_parser import pipeline_parser
 from utils.llama_cpp_call import LlamaCpp
 from typing import List, Union
 
+from utils.pickle_storage import PickleStorage
+
 # Initialize the ChromaDB storage
-storage = ChromaDBStorage()
+# storage = ChromaDBStorage()
+storage = PickleStorage("knowledge_base.pkl")  # Use PickleStorage for simplicity
 llama_cpp = LlamaCpp()
 
 async def process_files(files: Union[List[cl.File], List[AskFileResponse]], init_context = False) -> bool:
