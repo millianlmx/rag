@@ -29,12 +29,6 @@ class PickleStorage:
         """
         Perform a similarity search and return top k chunks (documents and metadata).
         """
-        # results = self.collection.query(
-        #     query_embeddings=[query_vector],
-        #     n_results=k,
-        #     include=["documents", "metadatas", "distances"]
-        # )
-        
         with open(self.filename, 'rb') as file:
             data = pickle.load(file)
             print(f"Loaded {len(data['documents'])} chunks and vectors from {self.filename}")
