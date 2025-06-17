@@ -1,10 +1,11 @@
-# LlamaCpp class for LLM and embedding calls using HTTP requests (OpenAI API compatible endpoints)
+# LlamaCpp class for LLM calls and SentenceTransformers for embeddings
 import httpx
+from sentence_transformers import SentenceTransformer
 
-class LlamaCpp:
-    def __init__(self, llm_url: str = "http://127.0.0.1:8080/v1", embedding_url: str = "http://127.0.0.1:8081"):
+class ModelCaller:
+    def __init__(self, llm_url: str = "http://127.0.0.1:8080/v1", embedding_model: str = "Lajavaness/sentence-camembert-large"):
         self.llm_url = llm_url
-        self.embedding_url = embedding_url
+        self.embedding_model = SentenceTransformer(embedding_model)
 
     async def chat(self, messages, model="gemma-3-4b-it-GGUF", **kwargs):
         """
@@ -27,21 +28,14 @@ class LlamaCpp:
             data = response.json()
             return data["choices"][0]["message"]["content"]
 
-    async def embed(self, text: str, model="Qwen3-Embedding-0.6B-GGUF", **kwargs):
+    async def embed(self, text: str, **kwargs):
         """
-        Async call to the embedding endpoint with a list of texts.
-        text: A single string to embed (will be wrapped in a list for API call)
-        model: Must match an embedding model loaded by llama.cpp server.
-        Returns a list of embedding vectors.
+        Async call using SentenceTransformers for embedding generation.
+        text: A single string to embed
+        Returns an embedding vector as a list.
         """
-        url = f"{self.embedding_url}/embeddings"
-        payload = {
-            "model": model,
-            "content": text
-        }
-        payload.update(kwargs)
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            return data[0]["embedding"]
+        # SentenceTransformers encode method is synchronous, but we wrap it for async compatibility
+        import asyncio
+        loop = asyncio.get_event_loop()
+        embedding = await loop.run_in_executor(None, self.embedding_model.encode, text)
+        return embedding.tolist()
