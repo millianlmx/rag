@@ -5,3 +5,5 @@ __pycache__
 */__pycache__
 venv/
 chainlit.md
+knowledge_base.pkl
+*.gguf

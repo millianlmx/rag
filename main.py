@@ -1,14 +1,15 @@
 # Chainlit interface for file drop (deposit zone)
 import chainlit as cl
 from chainlit.types import AskFileResponse
-from utils.chromadb_storage import ChromaDBStorage
 from utils.doc_parser import pipeline_parser
-from utils.llama_cpp_call import LlamaCpp
+from utils.llama_cpp_call import ModelCaller
 from typing import List, Union
 
-# Initialize the ChromaDB storage
-storage = ChromaDBStorage()
-llama_cpp = LlamaCpp()
+from utils.pickle_storage import PickleStorage
+
+# Initialize the Pickle storage
+storage = PickleStorage("knowledge_base.pkl")
+llama_cpp = ModelCaller()
 
 async def process_files(files: Union[List[cl.File], List[AskFileResponse]], init_context = False) -> bool:
     if files:
@@ -21,7 +22,8 @@ async def process_files(files: Union[List[cl.File], List[AskFileResponse]], init
             # Generate unique ids for each chunk
             ids = [f"{f.id}_{i}" for i in range(len(chunks))]
             documents = [chunk["chunk"] for chunk in chunks]
-            embeddings = [(await llama_cpp.embed([chunk["chunk"]]))[0] for chunk in chunks]
+            # embeddings = [(await llama_cpp.embed([chunk["chunk"]]))[0] for chunk in chunks]
+            embeddings = [await llama_cpp.embed(chunk["chunk"]) for chunk in chunks]
             metadatas = [{"file_name": f.name, "chunk_index": chunk["id"], "file_path": f.path} for i, chunk in enumerate(chunks)]
             storage.store_vectors(
                 ids=ids,
@@ -48,7 +50,7 @@ async def on_start(): # Initializes the knowledge base and sends a welcome messa
 @cl.on_message
 async def main(message: cl.Message):
     query = message.content
-    query_vector = (await llama_cpp.embed(query))[0]
+    query_vector = await llama_cpp.embed(query)
 
     files = list(filter(lambda x: isinstance(x, cl.File), message.elements))
 
@@ -90,3 +92,5 @@ Provided Document:
 
     # send the response back to the user
     await cl.Message(content=response, elements=elements).send()
+    
+
