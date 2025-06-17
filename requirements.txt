@@ -1,0 +1,6 @@
+PyPDF2
+python-pptx
+python-docx
+chainlit
+chromadb
+openai
