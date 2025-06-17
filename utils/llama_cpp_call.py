@@ -1,5 +1,6 @@
 # LlamaCpp class for LLM and embedding calls using HTTP requests (OpenAI API compatible endpoints)
 import httpx
+import os
 
 class LlamaCpp:
     def __init__(self, llm_url: str = "http://127.0.0.1:8080/v1", embedding_url: str = "http://127.0.0.1:8081"):
@@ -44,4 +45,6 @@ class LlamaCpp:
             response = await client.post(url, json=payload)
             response.raise_for_status()
             data = response.json()
+            with open(os.path.join(os.path.dirname(__file__), "llama_cpp_call.log"), "a") as log_file:
+                log_file.write(f"Embedding response: {len(data[0]["embedding"])}\n")
             return data[0]["embedding"]
