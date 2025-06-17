@@ -5,7 +5,14 @@ class PickleStorage:
     def __init__(self, filename):
         self.filename = filename
 
-    def save(self, data):
+    def store_vectors(self, ids: List[str], embeddings: List[list], metadatas: List[dict], documents: List[str]):
+        data = {
+            "ids": ids,
+            "embeddings": embeddings,
+            "metadatas": metadatas,
+            "documents": documents
+        }
+
         with open(self.filename, 'wb') as file:
             pickle.dump(data, file)
 
@@ -33,9 +40,7 @@ class PickleStorage:
             
             
             # return data['chunks'], data['vectors']
-        
-        # Return a list of dicts for each result
-        return [
+        loaded_data = [
             {
                 # 'ids' is not included in the result, so we skip it
                 "document": data["documents"][0][i],
@@ -44,3 +49,9 @@ class PickleStorage:
             }
             for i in range(len(data["documents"][0]))
         ]
+        
+        # # Sort loaded data by using cosine similarity (distance)
+        # loaded_data.sort(key=lambda x: x["distance"], reverse=True)
+        
+        # Return a list of dicts for each result
+        return loaded_data[:k]  # Return only the top k results
