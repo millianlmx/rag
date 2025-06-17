@@ -1,5 +1,6 @@
 import pickle
 from typing import List, Any
+from scipy.spatial.distance import cosine
 
 class PickleStorage:
     def __init__(self, filename):
@@ -42,16 +43,14 @@ class PickleStorage:
             # return data['chunks'], data['vectors']
         loaded_data = [
             {
-                # 'ids' is not included in the result, so we skip it
                 "document": data["documents"][0][i],
                 "metadata": data["metadatas"][0][i],
-                "distance": data["distances"][0][i]
+                "distance": 1 - cosine(query_vector, data["embeddings"][0][i])  # Calculate cosine distance
             }
             for i in range(len(data["documents"][0]))
         ]
         
-        # # Sort loaded data by using cosine similarity (distance)
-        # loaded_data.sort(key=lambda x: x["distance"], reverse=True)
+        # Sort data by distance
+        loaded_data.sort(key=lambda x: x["distance"], reverse=True)
         
-        # Return a list of dicts for each result
         return loaded_data[:k]  # Return only the top k results
