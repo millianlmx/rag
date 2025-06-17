@@ -18,14 +18,24 @@ source venv/bin/activate
 
 echo "Starting all services..."
 
+# From the .env file, load llm_model and embedding_model
+if [ -f .env ]; then
+    export $(grep -v '^#' .env | xargs)
+fi
+# Check if required environment variables are set
+if [ -z "$llm_model" ] || [ -z "$embedding_model" ]; then
+    echo "Error: llm_model and embedding_model must be set in .env file."
+    exit 1
+fi
+
 # Start LLM server (gemma-3-4b-it)
 echo "Starting LLM server on port 8080..."
-llama-server -hf ggml-org/gemma-3-4b-it-GGUF -c 4096 &
+llama-server -hf $llm_model -c 4096 &
 LLM_PID=$!
 
 # Start embedding server (Qwen3-Embedding)
 echo "Starting embedding server on port 8081..."
-llama-server -hf Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0 --embeddings --port 8081 --pooling cls &
+llama-server -hf $embedding_model --embeddings --port 8081 --pooling cls &
 EMBED_PID=$!
 
 # Wait a bit for servers to start up

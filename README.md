@@ -40,7 +40,14 @@ A Retrieval-Augmented Generation (RAG) system built with Chainlit that allows yo
 
 ## Models Setup
 
-The system requires two models to be available through llama.cpp:
+The system requires two models to be available through llama.cpp, you need to add the model's name in .env
+
+```sh
+llm_model=Qwen_Qwen3-8B-GGUF_Qwen3-8B-Q4_K_M.gguf
+embedding_model=Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0
+```
+
+You can put anything else if it's recognised by llama.cpp
 
 1. **LLM Model**: `ggml-org/gemma-3-4b-it-GGUF`
 2. **Embedding Model**: `Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0`
