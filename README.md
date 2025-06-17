@@ -75,7 +75,7 @@ If you prefer to start services manually:
 2. **Start the embedding server** (in a new terminal)
    ```bash
    source venv/bin/activate
-   llama-server -hf Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0 --embeddings --port 8081
+   llama-server -hf Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0 --embeddings --port 8081 --pooling cls
    ```
 
 3. **Start the Chainlit application** (in a new terminal)
@@ -117,7 +117,7 @@ If you prefer to start services manually:
 ### Server Endpoints
 
 - **LLM Server**: `http://127.0.0.1:8080/v1`
-- **Embedding Server**: `http://127.0.0.1:8081/v1`
+- **Embedding Server**: `http://127.0.0.1:8081`
 
 These can be modified in `utils/llama_cpp_call.py` if needed.
 
