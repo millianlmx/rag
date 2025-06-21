@@ -38,14 +38,14 @@ A Retrieval-Augmented Generation (RAG) system built with Chainlit that allows yo
    pip install -r requirements.txt
    ```
 
+
 ## Models Setup
 
-The system requires two models to be available through llama.cpp:
+The system requires a model to be available through llama.cpp:
 
-1. **LLM Model**: `ggml-org/gemma-3-4b-it-GGUF`
-2. **Embedding Model**: SentenceTransformers will automatically download the `Lajavaness/sentence-camembert-large` model on first use
-
-These will be automatically downloaded by llama-server when first used.
+You have to define this model in the .env file like this :
+```
+llm_model=<model_name>
 
 ## Usage
 

@@ -18,25 +18,33 @@ source venv/bin/activate
 
 echo "Starting all services..."
 
-# Start LLM server (gemma-3-4b-it)
-echo "Starting LLM server on port 8080..."
-llama-server -hf ggml-org/gemma-3-4b-it-GGUF -c 4096 &
-LLM_PID=$!
+# Take the variables from the .env file
+if [ -f .env ]; then
+    export $(grep -v '^#' .env | xargs)
+fi
 
-# Note: Embedding server is no longer needed as we use SentenceTransformers locally
+# Verify id llm_model is set
+if [ -z "$llm_model" ]; then
+    echo "Error: llm_model is not set in .env file."
+    exit 1
+fi
+
+# Start LLM server
+echo "Starting LLM server on port 8080..."
+llama-server -hf $llm_model -c 4096 &
+LLM_PID=$!
 
 # Wait a bit for server to start up
 echo "Waiting for LLM server to initialize..."
 sleep 10
 
 # Start Chainlit application
-echo "Starting Chainlit application..."
+# echo "Starting Chainlit application..."
 #chainlit run main.py &
 #CHAINLIT_PID=$!
 
 echo "All services started!"
 echo "LLM Server PID: $LLM_PID"
-echo "Note: Embeddings are now handled locally with SentenceTransformers"
 echo "Chainlit PID: $CHAINLIT_PID"
 echo ""
 echo "Press Ctrl+C to stop all services"
