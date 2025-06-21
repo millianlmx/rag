@@ -5,3 +5,5 @@ chainlit
 openai
 numpy
 sentence-transformers
+beautifulsoup4
+httpx

@@ -3,7 +3,6 @@
 from abc import ABC, abstractmethod
 import re
 from .type_parser import TypeParser
-from chainlit.types import AskFileResponse
 from typing import List, Union, Dict
 
 class DocumentParser(ABC):
