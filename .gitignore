@@ -7,3 +7,4 @@ venv/
 chainlit.md
 knowledge_base.pkl
 *.gguf
+.env
