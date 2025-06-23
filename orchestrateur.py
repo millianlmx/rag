@@ -1,11 +1,11 @@
 # Chainlit interface for file drop (deposit zone)
 import chainlit as cl
 from chainlit.types import AskFileResponse
-from utils.llama_cpp_call import ModelCaller
-from typing import List
+from utils.model_caller import ModelCaller
+from typing import List, Dict, Union
 from tools.rag_tool import RAGTool
 from tools.internet_search_tool import InternetSearchTool
-import re
+import json 
 
 # Initialize the llm caller
 llama_cpp = ModelCaller()
@@ -94,26 +94,13 @@ async def handle_internet_query(query: str):
     try:
         await cl.Message(content="🔍 Recherche en cours sur Internet...").send()
         
-        # Get search results and extracted content for sources
-        search_data = await internet_search_tool.search_and_extract(
-            query,
-            num_results=5,
-            num_extract=3
-        )
         
         # Use internet search tool to get summarized response
-        response = await internet_search_tool.search_and_summarize(
+        response = await internet_search_tool.generate_answer_from_web(
             query,
             num_results=5,
             num_extract=3
         )
-        
-        # Add source information to the response
-        if search_data.get('search_results'):
-            sources_text = "\n\n**Sources:**\n"
-            for i, result in enumerate(search_data['search_results'][:3], 1):
-                sources_text += f"{i}. [{result['title']}]({result['url']})\n"
-            response += sources_text
         
         await cl.Message(content=response).send()
         
@@ -158,7 +145,6 @@ async def handle_wikipedia_scrap(query: str, wikipedia_url: str):
             content="Désolé, je n'ai pas pu extraire le contenu de Wikipedia. Laissez-moi faire une recherche Internet."
         ).send()
         await handle_internet_query(query)
-
 
 # Add file processing capability through message handling
 async def process_uploaded_files(files: List[AskFileResponse]):
@@ -276,110 +262,14 @@ async def process_uploaded_files(files: List[AskFileResponse]):
         return False
 
 
-# Add explicit file upload handling
-async def ask_for_files():
-    """Ask user to upload files for processing"""
-    files = await cl.AskFileMessage(
-        content="Veuillez télécharger vos documents (PDF, DOCX, PPTX) :",
-        accept=["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 
-                "application/vnd.openxmlformats-officedocument.presentationml.presentation"],
-        max_files=10,
-        max_size_mb=20
-    ).send()
-    
-    if files:
-        success = await process_uploaded_files(files)
-        return success
-    return False
-
-
 @cl.on_message
 async def main(message: cl.Message):
-    # Handle file uploads first
-    if message.elements:
-        print(f"[Debug] Found {len(message.elements)} elements in message")
-        files = []
-        
-        for element in message.elements:
-            print(f"[Debug] Element type: {type(element)}")
-            print(f"[Debug] Element attributes: {dir(element)}")
-            
-            # Handle Chainlit File elements
-            if hasattr(element, 'path') and hasattr(element, 'name'):
-                try:
-                    import os  # Import os for file operations
-                    print(f"[Debug] Reading file from path: {element.path}")
-                    print(f"[Debug] Original file exists: {os.path.exists(element.path)}")
-                    
-                    with open(element.path, 'rb') as f:
-                        content = f.read()
-                    
-                    print(f"[Debug] Read {len(content)} bytes from original file")
-                    
-                    if len(content) == 0:
-                        print(f"[Debug] ERROR: Original file {element.path} is empty!")
-                        await cl.Message(
-                            content=f"❌ Le fichier {element.name} semble être vide ou corrompu."
-                        ).send()
-                        continue
-                    
-                    # Create a mock AskFileResponse-like object with proper attributes
-                    # Determine MIME type based on file extension
-                    file_extension = element.name.lower().split('.')[-1]
-                    mime_type = None
-                    if file_extension == 'pdf':
-                        mime_type = "application/pdf"
-                    elif file_extension == 'docx':
-                        mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                    elif file_extension == 'pptx':
-                        mime_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                    
-                    file_obj = type('FileObj', (), {
-                        'content': content,
-                        'name': element.name,
-                        'type': mime_type,  # For AskFileResponse compatibility
-                        'path': element.path,
-                        'id': element.name.split('.')[0]  # Use filename without extension as ID
-                    })()
-                    files.append(file_obj)
-                    print(f"[Debug] Successfully read file: {element.name}, size: {len(content)} bytes, mime: {mime_type}")
-                    
-                except Exception as e:
-                    print(f"[Debug] Could not read file {element.path}: {e}")
-                    await cl.Message(
-                        content=f"❌ Erreur lors de la lecture du fichier {element.name}: {str(e)}"
-                    ).send()
-                    
-            # Handle other file types (AskFileResponse)
-            elif hasattr(element, 'content') and hasattr(element, 'name'):
-                if element.content is not None:
-                    files.append(element)
-                    print(f"[Debug] Found file with content: {element.name}")
-                else:
-                    print(f"[Debug] File {element.name} has no content")
-        
-        if files:
-            await process_uploaded_files(files)
-            return
-        else:
-            await cl.Message(
-                content="❌ Aucun fichier valide détecté. Veuillez réessayer."
-            ).send()
-            return
-    
+
     query = message.content.strip()
     original_query = query
+
     
-    # Check for special commands
-    if query.lower() in ['/upload', '/add_files', '/documents']:
-        await ask_for_files()
-        return
-    
-    # Check if the message contains a Wikipedia URL
-    wikipedia_pattern = r'https?://[a-zA-Z0-9.-]*\.?wikipedia\.org/[^\s]*'
-    wikipedia_urls = re.findall(wikipedia_pattern, query)
-    
-    if wikipedia_urls:
+    if None:
         # Extract Wikipedia content directly
         await handle_wikipedia_scrap(query, wikipedia_urls[0])
         return
@@ -387,64 +277,64 @@ async def main(message: cl.Message):
     # Use orchestrator to determine which tool to use
     orchestrator_query = "Question :" + query
     system_prompt = (
-        "/no_think Tu es un orchestrateur d'IA. Ton rôle est de choisir l'outil le plus adapté pour répondre à la question de l'utilisateur.\n\n"
-        "Voici les règles strictes à suivre pour choisir un outil :\n\n"
-        "- Réponds `RAG` si la question concerne le développement Python, la programmation, ou des sujets techniques qui pourraient être dans une base de connaissances locale.\n"
-        "- Réponds `INTERNET` pour toutes les autres questions, y compris les actualités, les événements récents, les informations générales, ou toute question nécessitant des informations à jour.\n\n"
-        "Réponds uniquement par `RAG` ou `INTERNET`. Ne donne aucune autre information."
+        "Tu es un orchestrateur intelligent qui décide quel outil utiliser pour répondre à la question de l'utilisateur.\n"
+        "Règles de décision :\n"
+        "- RAG : Utilise cet outil quand la question concerne la programmation\n"
+        "- SCRAPING : Utilise cet outil quand tu détectes une URL Wikipedia (https://fr.wikipedia.org/wiki/...) dans la question, assure toi de scraper uniquement les pages Wikipedia avec le nom de domaine `fr.wikipedia.org` sinon renvoie INTERNET /!\\ /!\\.\n"
+        "- INTERNET : Utilise cet outil quand la question nécessite des connaissances générales récentes ou spécialisées\n"
+        "- LLM : Utilise cet outil pour les questions banales ou conversationnelles simples\n\n"
+        "Réponds uniquement avec ce format JSON :\n"
+        "{\n"
+        "    \"tool\": \"RAG\" | \"SCRAPING\" | \"INTERNET\" | \"LLM\",\n"
+        "    \"urls\": [\"url1\", \"url2\", ...]\n"
+        "}\n\n"
+        "Si tu suggères `SCRAPING`, inclus les URLs détectées dans le champ `urls`. Sinon, laisse le champ `urls` vide [].\n"
+        "Ne donne aucune autre information que ce JSON."
     )
     
     response = await llama_cpp.chat(messages=[
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": orchestrator_query}
     ])
-    response = response.replace("<think>", "").replace("</think>", "").strip()
-    
-    # Log the response from the LLM
-    print(f"[Orchestrateur] Réponse de l'IA : '{response}' pour la question : '{query}'")
 
-    if "RAG" in response.upper():
+    response: Dict[str, Union[str, List[str]]] = json.loads(response.replace("<think>", "").replace("</think>", "").strip().replace("```json\n", "").replace("\n```", ""))
+
+    tool: str = response.get("tool", "").upper()
+    urls: List[str] = response.get("urls", [])
+
+    if "RAG" in tool:
         await cl.Message(
             content="🧠 Je vais consulter ma base de connaissances pour répondre à votre question."
         ).send()
         await handle_rag_query(original_query)
-        
-    elif "INTERNET" in response.upper():
+
+    elif "INTERNET" in tool:
         await cl.Message(
             content="🌐 Je vais rechercher sur Internet pour vous donner une réponse à jour."
         ).send()
         await handle_internet_query(original_query)
-
-    # To do: implement code execution tool like python, it will make the chatbot able to perform calculations, data analysis, graphs, etc.
-        
-    else:
-        # Default to internet search if unclear
-        await cl.Message(
-            content="🌐 Je vais rechercher sur Internet pour répondre à votre question."
-        ).send()
-        await handle_internet_query(original_query)
-
-
-# Debug function to inspect file objects
-def debug_file_object(file_obj, context=""):
-    """Debug function to inspect file object attributes"""
-    print(f"[Debug {context}] File object type: {type(file_obj)}")
-    print(f"[Debug {context}] File name: {getattr(file_obj, 'name', 'NO NAME')}")
-    
-    # Check common attributes
-    attrs_to_check = ['content', 'path', 'id', 'type', 'mime', 'size']
-    for attr in attrs_to_check:
-        if hasattr(file_obj, attr):
-            value = getattr(file_obj, attr)
-            if attr == 'content' and value:
-                print(f"[Debug {context}] {attr}: {type(value)} with {len(value)} bytes")
+    elif "SCRAPING" in tool:
+        if urls and len(urls) > 0:
+            wikipedia_url = urls[0]
+            if "fr.wikipedia.org" in wikipedia_url:
+                await handle_wikipedia_scrap(original_query, wikipedia_url)
             else:
-                print(f"[Debug {context}] {attr}: {value}")
+                await cl.Message(
+                    content="⚠️ L'URL fournie n'est pas une page Wikipedia valide. Je vais faire une recherche Internet à la place."
+                ).send()
+                await handle_internet_query(original_query)
         else:
-            print(f"[Debug {context}] {attr}: NOT PRESENT")
-    
-    print(f"[Debug {context}] All attributes: {[a for a in dir(file_obj) if not a.startswith('_')]}")
-
+            await cl.Message(
+                content="⚠️ Aucune URL Wikipedia détectée. Je vais faire une recherche Internet à la place."
+            ).send()
+            await handle_internet_query(original_query)
+    else:
+        # We consider the LLM tool as default
+        response = await llama_cpp.chat(messages=[
+            {"role": "system", "content": "Tu es un assistant utile qui répond aux questions de manière conversationnelle."},
+            {"role": "user", "content": original_query}
+        ])
+        await cl.Message(content=response).send()
 
 # Add cleanup function for the internet search tool and temporary files
 @cl.on_chat_end

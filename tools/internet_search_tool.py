@@ -1,11 +1,5 @@
-"""
-Internet Search Tool - A tool for searching the web and retrieving information
-This tool provides web search capabilities and can extract content from web pages.
-"""
-
-import asyncio
 import httpx
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any
 from urllib.parse import urlencode, urlparse
 from bs4 import BeautifulSoup
 import re
@@ -15,7 +9,7 @@ import os
 # Add parent directory to path to import utils
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from utils.llama_cpp_call import ModelCaller
+from utils.model_caller import ModelCaller
 
 
 class InternetSearchTool:
@@ -24,23 +18,14 @@ class InternetSearchTool:
     Supports multiple search engines and content extraction.
     """
     
-    def __init__(self, 
-                 llm_url: str = "http://127.0.0.1:8080/v1",
-                 embedding_model: str = "Lajavaness/sentence-camembert-large",
-                 default_search_engine: str = "duckduckgo"):
+    def __init__(self):
         """
         Initialize the Internet Search tool.
-        
-        Args:
-            llm_url: URL for the LLM API endpoint
-            embedding_model: Name of the sentence transformer model for embeddings
-            default_search_engine: Default search engine to use
         """
-        self.model_caller = ModelCaller(llm_url=llm_url, embedding_model=embedding_model)
-        self.default_search_engine = default_search_engine
+        self.model_caller = ModelCaller()
         self.session = None
-        
-    async def _get_session(self) -> httpx.AsyncClient:
+
+    async def _get_http_session(self) -> httpx.AsyncClient:
         """Get or create an HTTP session"""
         if self.session is None:
             headers = {
@@ -49,19 +34,12 @@ class InternetSearchTool:
             self.session = httpx.AsyncClient(timeout=30.0, headers=headers)
         return self.session
     
-    async def search_duckduckgo(self, query: str, num_results: int = 10) -> List[Dict[str, str]]:
+    async def fetch_search_results(self, query: str, num_results: int = 10) -> List[Dict[str, str]]:
         """
-        Search using DuckDuckGo search engine.
-        
-        Args:
-            query: Search query
-            num_results: Number of results to return
-            
-        Returns:
-            List of dictionaries containing title, url, and snippet
+        Perform a web search using DuckDuckGo and return an array of {num_results} length.
         """
         try:
-            session = await self._get_session()
+            session = await self._get_http_session()
             
             # First, get the search token
             search_url = "https://html.duckduckgo.com/html/"
@@ -70,11 +48,11 @@ class InternetSearchTool:
             response = await session.get(search_url, params=params)
             response.raise_for_status()
             
-            soup = BeautifulSoup(response.text, 'html.parser')
+            parser = BeautifulSoup(response.text, 'html.parser')
             results = []
             
             # Extract search results
-            result_divs = soup.find_all('div', class_='result')
+            result_divs = parser.find_all('div', class_='result')
             
             for i, div in enumerate(result_divs[:num_results]):
                 title_elem = div.find('a', class_='result__a')
@@ -89,7 +67,6 @@ class InternetSearchTool:
                         'title': title,
                         'url': url,
                         'snippet': snippet,
-                        'search_engine': 'duckduckgo'
                     })
             
             return results
@@ -98,109 +75,21 @@ class InternetSearchTool:
             print(f"Error searching DuckDuckGo: {str(e)}")
             return []
     
-    async def search_bing(self, query: str, num_results: int = 10) -> List[Dict[str, str]]:
-        """
-        Search using Bing search engine (requires Bing Search API key).
-        
-        Args:
-            query: Search query
-            num_results: Number of results to return
-            
-        Returns:
-            List of dictionaries containing title, url, and snippet
-        """
-        # Note: This requires a Bing Search API key
-        # For now, we'll implement a basic web scraping version
+    async def extract_webpage_text(self, url: str, max_chars: int = 5000) -> Dict[str, str]:
         try:
-            session = await self._get_session()
-            
-            search_url = "https://www.bing.com/search"
-            params = {'q': query, 'count': num_results}
-            
-            response = await session.get(search_url, params=params)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.text, 'html.parser')
-            results = []
-            
-            # Extract search results from Bing
-            result_divs = soup.find_all('li', class_='b_algo')
-            
-            for div in result_divs[:num_results]:
-                title_elem = div.find('h2')
-                if title_elem:
-                    link_elem = title_elem.find('a')
-                    if link_elem:
-                        title = link_elem.get_text(strip=True)
-                        url = link_elem.get('href', '')
-                        
-                        # Find snippet
-                        snippet_elem = div.find('p') or div.find('div', class_='b_caption')
-                        snippet = snippet_elem.get_text(strip=True) if snippet_elem else ""
-                        
-                        results.append({
-                            'title': title,
-                            'url': url,
-                            'snippet': snippet,
-                            'search_engine': 'bing'
-                        })
-            
-            return results
-            
-        except Exception as e:
-            print(f"Error searching Bing: {str(e)}")
-            return []
-    
-    async def search(self, 
-                    query: str, 
-                    num_results: int = 10, 
-                    search_engine: str = None) -> List[Dict[str, str]]:
-        """
-        Search the internet using the specified search engine.
-        
-        Args:
-            query: Search query
-            num_results: Number of results to return
-            search_engine: Search engine to use ('duckduckgo', 'bing')
-            
-        Returns:
-            List of search results
-        """
-        engine = search_engine or self.default_search_engine
-        
-        if engine.lower() == 'duckduckgo':
-            return await self.search_duckduckgo(query, num_results)
-        elif engine.lower() == 'bing':
-            return await self.search_bing(query, num_results)
-        else:
-            print(f"Unsupported search engine: {engine}")
-            return await self.search_duckduckgo(query, num_results)
-    
-    async def extract_content(self, url: str, max_chars: int = 5000) -> Dict[str, str]:
-        """
-        Extract content from a web page.
-        
-        Args:
-            url: URL to extract content from
-            max_chars: Maximum number of characters to extract
-            
-        Returns:
-            Dictionary containing title, content, and url
-        """
-        try:
-            session = await self._get_session()
+            session = await self._get_http_session()
             
             response = await session.get(url)
             response.raise_for_status()
             
-            soup = BeautifulSoup(response.text, 'html.parser')
+            parser = BeautifulSoup(response.text, 'html.parser')
             
             # Remove script and style elements
-            for script in soup(["script", "style"]):
+            for script in parser(["script", "style"]):
                 script.decompose()
             
             # Extract title
-            title_elem = soup.find('title')
+            title_elem = parser.find('title')
             title = title_elem.get_text(strip=True) if title_elem else "No title"
             
             # Extract main content
@@ -212,15 +101,15 @@ class InternetSearchTool:
             
             content = ""
             for selector in content_selectors:
-                content_elem = soup.select_one(selector)
+                content_elem = parser.select_one(selector)
                 if content_elem:
                     content = content_elem.get_text(separator=' ', strip=True)
                     break
             
             # If no specific content area found, get all text
             if not content:
-                content = soup.get_text(separator=' ', strip=True)
-            
+                content = parser.get_text(separator=' ', strip=True)
+
             # Clean up content
             content = re.sub(r'\s+', ' ', content)
             content = content[:max_chars]
@@ -241,25 +130,12 @@ class InternetSearchTool:
                 'length': 0
             }
     
-    async def search_and_extract(self, 
+    async def retrieve_relevant_web_content(self, 
                                 query: str, 
                                 num_results: int = 5,
-                                num_extract: int = 3,
-                                search_engine: str = None) -> Dict[str, Any]:
-        """
-        Search the internet and extract content from top results.
-        
-        Args:
-            query: Search query
-            num_results: Number of search results to get
-            num_extract: Number of pages to extract content from
-            search_engine: Search engine to use
-            
-        Returns:
-            Dictionary containing search results and extracted content
-        """
+                                num_extract: int = 3) -> Dict[str, Any]:
         # Perform search
-        search_results = await self.search(query, num_results, search_engine)
+        search_results = await self.fetch_search_results(query, num_results)
         
         if not search_results:
             return {
@@ -272,7 +148,7 @@ class InternetSearchTool:
         # Extract content from top results
         extracted_content = []
         for i, result in enumerate(search_results[:num_extract]):
-            content = await self.extract_content(result['url'])
+            content = await self.extract_webpage_text(result['url'])
             content['search_rank'] = i + 1
             content['search_snippet'] = result['snippet']
             extracted_content.append(content)
@@ -285,11 +161,10 @@ class InternetSearchTool:
             'total_extracted': len(extracted_content)
         }
     
-    async def search_and_summarize(self, 
+    async def generate_answer_from_web(self, 
                                   query: str, 
                                   num_results: int = 5,
                                   num_extract: int = 3,
-                                  search_engine: str = None,
                                   custom_prompt: str = None) -> str:
         """
         Search the internet and provide a summarized answer using LLM.
@@ -298,15 +173,14 @@ class InternetSearchTool:
             query: Search query
             num_results: Number of search results to get
             num_extract: Number of pages to extract content from
-            search_engine: Search engine to use
             custom_prompt: Custom system prompt for the LLM
             
         Returns:
             Summarized answer from the LLM
         """
         # Get search results and extracted content
-        data = await self.search_and_extract(query, num_results, num_extract, search_engine)
-        
+        data = await self.retrieve_relevant_web_content(query, num_results, num_extract)
+
         if 'error' in data:
             return f"Error: {data['error']}"
         
@@ -324,9 +198,11 @@ Content: {content['content'][:2000]}...
         # Use custom or default system prompt
         if custom_prompt is None:
             custom_prompt = (
-                "Tu es un assistant utile qui répond aux questions en utilisant "
-                "les informations trouvées sur Internet. Fournis une réponse complète "
-                "et précise basée sur les sources fournies. Cite les sources quand possible."
+                "Tu es un assistant expert qui analyse et synthétise l'information provenant de sources Internet. "
+                "Ta tâche est de créer un condensé pertinent et structuré des informations les plus importantes "
+                "trouvées dans les sources fournies. Concentre-toi sur les points clés, les faits essentiels "
+                "et les informations les plus récentes ou significatives. "
+                "Termine toujours ta réponse en citant clairement toutes les sources utilisées avec leurs URLs."
             )
         
         # Generate summary using LLM
@@ -344,49 +220,3 @@ Content: {content['content'][:2000]}...
         if self.session:
             await self.session.aclose()
             self.session = None
-
-
-# Example usage and testing functions
-async def test_internet_search_tool():
-    """Test function for the Internet Search tool"""
-    search_tool = InternetSearchTool()
-    
-    try:
-        # Test basic search
-        query = "artificial intelligence latest news"
-        print(f"Searching for: {query}")
-        
-        results = await search_tool.search(query, num_results=5)
-        print(f"Found {len(results)} results")
-        
-        for i, result in enumerate(results):
-            print(f"{i+1}. {result['title']}")
-            print(f"   URL: {result['url']}")
-            print(f"   Snippet: {result['snippet'][:100]}...")
-            print()
-        
-        # Test content extraction
-        if results:
-            print("Extracting content from first result...")
-            content = await search_tool.extract_content(results[0]['url'])
-            print(f"Title: {content['title']}")
-            print(f"Content length: {content['length']} characters")
-            print(f"Content preview: {content['content'][:200]}...")
-            print()
-        
-        # Test search and summarize
-        print("Getting summarized answer...")
-        summary = await search_tool.search_and_summarize(
-            "What are the latest developments in artificial intelligence?",
-            num_results=3,
-            num_extract=2
-        )
-        print(f"Summary: {summary}")
-        
-    finally:
-        await search_tool.close()
-
-
-if __name__ == "__main__":
-    # Run test
-    asyncio.run(test_internet_search_tool())

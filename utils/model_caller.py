@@ -28,14 +28,10 @@ class ModelCaller:
             data = response.json()
             return data["choices"][0]["message"]["content"]
 
-    async def embed(self, text: str, **kwargs):
+    def embed(self, text: str, **kwargs):
         """
         Async call using SentenceTransformers for embedding generation.
         text: A single string to embed
         Returns an embedding vector as a list.
         """
-        # SentenceTransformers encode method is synchronous, but we wrap it for async compatibility
-        import asyncio
-        loop = asyncio.get_event_loop()
-        embedding = await loop.run_in_executor(None, self.embedding_model.encode, text)
-        return embedding.tolist()
+        return self.embedding_model.encode(text, **kwargs)

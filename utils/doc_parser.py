@@ -1,9 +1,13 @@
-# from typing import List
-# You may need to install: PyPDF2, python-pptx, python-docx
 from abc import ABC, abstractmethod
 import re
-from .type_parser import TypeParser
 from typing import List, Union, Dict
+from enum import Enum
+
+class TypeParser(Enum):
+    PDF = "application/pdf"
+    PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    TXT = "text/plain"
 
 class DocumentParser(ABC):
     def __init__(self, file_path: str):
@@ -74,9 +78,9 @@ def pipeline_parser(file_obj) -> List[Dict[str, Union[str, TypeParser]]]:
 
     # Chainlit File: has .mime, .path, .id, .name
     # AskFileResponse: has .type, .path, .id, .name
-    if hasattr(file_obj, "mime"):
+    if file_obj["type"]:
         # Chainlit File
-        mime = getattr(file_obj, "mime", None)
+        mime = file_obj["type"]
         if mime:
             if "pdf" in mime:
                 file_type = TypeParser.PDF
@@ -84,15 +88,9 @@ def pipeline_parser(file_obj) -> List[Dict[str, Union[str, TypeParser]]]:
                 file_type = TypeParser.PPTX
             elif "word" in mime or "docx" in mime:
                 file_type = TypeParser.DOCX
-        file_path = getattr(file_obj, "path", None)
-        file_id = getattr(file_obj, "id", None)
-        file_name = getattr(file_obj, "name", None)
-    else:
-        # AskFileResponse
-        file_type = TypeParser(getattr(file_obj, "type", None))
-        file_path = getattr(file_obj, "path", None)
-        file_id = getattr(file_obj, "id", None)
-        file_name = getattr(file_obj, "name", None)
+        file_path = file_obj["path"]
+        file_id = file_obj["id"]
+        file_name = file_obj["name"]
 
     if file_type in type2Class and file_path:
         parsing_class: DocumentParser = type2Class[file_type]

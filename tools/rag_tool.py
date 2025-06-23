@@ -1,8 +1,3 @@
-"""
-RAG Tool - A modular tool for Retrieval-Augmented Generation
-This tool provides document processing and similarity search capabilities.
-"""
-
 from typing import List, Dict, Any
 from pathlib import Path
 import sys
@@ -12,7 +7,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from utils.doc_parser import pipeline_parser
-from utils.llama_cpp_call import ModelCaller
+from utils.model_caller import ModelCaller
 from utils.pickle_storage import PickleStorage
 
 
@@ -22,22 +17,31 @@ class RAGTool:
     store embeddings, and perform similarity searches.
     """
     
-    def __init__(self, 
-                 knowledge_base_path: str = "knowledge_base.pkl",
-                 llm_url: str = "http://127.0.0.1:8080/v1",
-                 embedding_model: str = "Lajavaness/sentence-camembert-large"):
+    def __init__(self, knowledge_base_path: str = "knowledge_base.pkl"):
         """
         Initialize the RAG tool.
         
         Args:
             knowledge_base_path: Path to the pickle file for storing the knowledge base
-            llm_url: URL for the LLM API endpoint
             embedding_model: Name of the sentence transformer model for embeddings
         """
         self.storage = PickleStorage(knowledge_base_path)
-        self.model_caller = ModelCaller(llm_url=llm_url, embedding_model=embedding_model)
+        self.model_caller = ModelCaller()
+        # Get all candidate files
+        all_files = list(filter(lambda p: p.endswith((".pdf", ".docx", ".pptx")), map(os.path.join, ["docs"], os.listdir("docs"))))
+        # Get already processed file paths from storage
+        already_processed = set()
+        stats = self.get_knowledge_base_stats()
+        for f in stats.get("files", {}).values():
+            if "path" in f:
+                already_processed.add(f["path"])
+                print(f"Already processed: {f['path']}")
+        # Only process files not already in storage
+        self.document_paths = [f for f in all_files if f not in already_processed]
+        if self.document_paths:
+            self.process_documents(self.document_paths, verbose=True)
         
-    async def process_documents(self, file_paths: List[str], verbose: bool = True) -> bool:
+    def process_documents(self, file_paths: List[str], verbose: bool = True) -> bool:
         """
         Process documents and add them to the knowledge base.
         
@@ -71,12 +75,12 @@ class RAGTool:
                     mime_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 
                 # Create a mock file object similar to Chainlit's structure
-                file_obj = type('FileObj', (), {
+                file_obj = {
                     'path': file_path,
                     'name': Path(file_path).name,
                     'id': Path(file_path).stem,
                     'type': mime_type  # Use proper MIME type instead of file extension
-                })()
+                }
                 
                 chunks = pipeline_parser(file_obj)
                 if not chunks:
@@ -85,19 +89,19 @@ class RAGTool:
                     continue
                     
                 # Generate unique IDs for each chunk
-                ids = [f"{file_obj.id}_{i}" for i in range(len(chunks))]
+                ids = [f"{file_obj['id']}_{i}" for i in range(len(chunks))]
                 documents = [chunk["chunk"] for chunk in chunks]
                 
                 # Generate embeddings for all chunks
                 embeddings = []
                 for chunk in chunks:
-                    embedding = await self.model_caller.embed(chunk["chunk"])
+                    embedding = self.model_caller.embed(chunk["chunk"])
                     embeddings.append(embedding)
                 
                 # Prepare metadata
                 metadatas = [
                     {
-                        "file_name": file_obj.name,
+                        "file_name": file_obj["name"],
                         "chunk_index": chunk["id"],
                         "file_path": file_path
                     } 
@@ -138,7 +142,7 @@ class RAGTool:
             List of dictionaries containing document, metadata, and distance
         """
         # Generate embedding for the query
-        query_vector = await self.model_caller.embed(query)
+        query_vector = self.model_caller.embed(query)
         
         # Perform similarity search
         results = self.storage.similarity_search(query_vector, k=k)
