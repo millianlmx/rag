@@ -29,6 +29,7 @@ async def handle_rag_query(query: str):
         # Get knowledge base stats first
         stats = rag_tool.get_knowledge_base_stats()
         
+        # Check if the knowledge base is empty
         if stats['total_documents'] == 0:
             await cl.Message(
                 content="Ma base de connaissances est vide. Je vais chercher sur Internet pour vous aider."
@@ -146,133 +147,12 @@ async def handle_wikipedia_scrap(query: str, wikipedia_url: str):
         ).send()
         await handle_internet_query(query)
 
-# Add file processing capability through message handling
-async def process_uploaded_files(files: List[AskFileResponse]):
-    """Process uploaded files and add them to the knowledge base"""
-    if not files:
-        return False
-    
-    await cl.Message(content="📄 Traitement des fichiers en cours...").send()
-    
-    try:
-        file_paths = []
-        import os
-        
-        # Create a temporary directory if it doesn't exist
-        temp_dir = os.path.join(os.getcwd(), "temp_uploads")
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        for file in files:
-            debug_file_object(file, "Upload")
-            
-            # Handle different file types
-            content = None
-            
-            # AskFileResponse objects have 'content' as bytes or 'path' attribute
-            if hasattr(file, 'content') and file.content is not None:
-                content = file.content
-                print(f"[File Upload] Using direct content, size: {len(content)} bytes")
-            elif hasattr(file, 'path') and file.path:
-                # Read from path
-                try:
-                    with open(file.path, 'rb') as f:
-                        content = f.read()
-                    print(f"[File Upload] Read from path {file.path}, size: {len(content)} bytes")
-                except Exception as e:
-                    print(f"[File Upload] Error reading from path {file.path}: {e}")
-                    continue
-            else:
-                print(f"[File Upload] No content or path found for file {file.name}")
-                continue
-            
-            if not content or len(content) == 0:
-                print(f"[File Upload] Warning: File {file.name} has no content")
-                await cl.Message(
-                    content=f"❌ Le fichier {file.name} semble être vide."
-                ).send()
-                continue
-            
-            # Save the uploaded file temporarily with a safe filename
-            safe_filename = file.name.replace(" ", "_").replace("(", "").replace(")", "").replace("—", "-")
-            temp_path = os.path.join(temp_dir, safe_filename)
-                
-            with open(temp_path, "wb") as f:
-                bytes_written = f.write(content)
-                print(f"[File Upload] Wrote {bytes_written} bytes to {temp_path}")
-            
-            # Verify the file was written correctly
-            if os.path.exists(temp_path):
-                file_size = os.path.getsize(temp_path)
-                print(f"[File Upload] File created successfully: {temp_path}, size: {file_size} bytes")
-                if file_size == 0:
-                    print(f"[File Upload] ERROR: File {temp_path} is empty!")
-                    continue
-            else:
-                print(f"[File Upload] ERROR: File {temp_path} was not created!")
-                continue
-                
-            file_paths.append(temp_path)
-            print(f"[File Upload] Added to processing queue: {temp_path}")
-
-        # Process files with RAG tool
-        if not file_paths:
-            await cl.Message(
-                content="❌ Aucun fichier valide trouvé pour le traitement."
-            ).send()
-            return False
-            
-        success = await rag_tool.process_documents(file_paths, verbose=True)
-        
-        if success:
-            stats = rag_tool.get_knowledge_base_stats()
-            await cl.Message(
-                content=f"✅ Fichiers traités avec succès ! Ma base de connaissances contient maintenant {stats['total_documents']} documents."
-            ).send()
-        else:
-            await cl.Message(
-                content="❌ Erreur lors du traitement des fichiers. Veuillez réessayer."
-            ).send()
-            
-        # Keep files for source references - don't clean up immediately
-        # Files will be cleaned up when the chat session ends
-        if success:
-            print(f"[File Upload] Keeping {len(file_paths)} files for source references")
-        else:
-            # Only clean up if processing failed
-            for path in file_paths:
-                try:
-                    os.remove(path)
-                    print(f"[File Upload] Cleaned up failed file: {path}")
-                except Exception as cleanup_error:
-                    print(f"[File Upload] Could not clean up {path}: {cleanup_error}")
-            
-            # Remove temp directory if empty
-            try:
-                os.rmdir(temp_dir)
-            except:
-                pass  # Directory not empty or other issue, ignore
-        
-        return success
-                
-    except Exception as e:
-        print(f"[File Upload Error] {str(e)}")
-        await cl.Message(
-            content="❌ Erreur lors du traitement des fichiers. Veuillez réessayer."
-        ).send()
-        return False
-
 
 @cl.on_message
 async def main(message: cl.Message):
 
     query = message.content.strip()
     original_query = query
-
-    
-    if None:
-        # Extract Wikipedia content directly
-        await handle_wikipedia_scrap(query, wikipedia_urls[0])
-        return
     
     # Use orchestrator to determine which tool to use
     orchestrator_query = "Question :" + query
@@ -297,44 +177,52 @@ async def main(message: cl.Message):
         {"role": "user", "content": orchestrator_query}
     ])
 
+    # Get rid of think tags (on some LLMs use these to indicate thinking)
     response: Dict[str, Union[str, List[str]]] = json.loads(response.replace("<think>", "").replace("</think>", "").strip().replace("```json\n", "").replace("\n```", ""))
 
+    # Enhance variables from orchestrator response
     tool: str = response.get("tool", "").upper()
     urls: List[str] = response.get("urls", [])
 
-    if "RAG" in tool:
-        await cl.Message(
-            content="🧠 Je vais consulter ma base de connaissances pour répondre à votre question."
-        ).send()
-        await handle_rag_query(original_query)
-
-    elif "INTERNET" in tool:
-        await cl.Message(
-            content="🌐 Je vais rechercher sur Internet pour vous donner une réponse à jour."
-        ).send()
-        await handle_internet_query(original_query)
-    elif "SCRAPING" in tool:
-        if urls and len(urls) > 0:
-            wikipedia_url = urls[0]
-            if "fr.wikipedia.org" in wikipedia_url:
-                await handle_wikipedia_scrap(original_query, wikipedia_url)
-            else:
-                await cl.Message(
-                    content="⚠️ L'URL fournie n'est pas une page Wikipedia valide. Je vais faire une recherche Internet à la place."
-                ).send()
-                await handle_internet_query(original_query)
-        else:
+    # Switch based on the tool selected by the orchestrator
+    match(tool):
+        case "RAG":
             await cl.Message(
-                content="⚠️ Aucune URL Wikipedia détectée. Je vais faire une recherche Internet à la place."
+            content="🧠 Je vais consulter ma base de connaissances pour répondre à votre question."
+            ).send()
+            await handle_rag_query(original_query)
+
+        case "INTERNET":
+            await cl.Message(
+            content="🌐 Je vais rechercher sur Internet pour vous donner une réponse à jour."
             ).send()
             await handle_internet_query(original_query)
-    else:
-        # We consider the LLM tool as default
-        response = await llama_cpp.chat(messages=[
-            {"role": "system", "content": "Tu es un assistant utile qui répond aux questions de manière conversationnelle."},
-            {"role": "user", "content": original_query}
-        ])
-        await cl.Message(content=response).send()
+
+        case "SCRAPING":
+            if urls and len(urls) > 0:
+                wikipedia_url = urls[0]
+                if "fr.wikipedia.org" in wikipedia_url:
+                    await handle_wikipedia_scrap(original_query, wikipedia_url)
+                else:
+                    await cl.Message(
+                        content="⚠️ L'URL fournie n'est pas une page Wikipedia valide. Je vais faire une recherche Internet à la place."
+                    ).send()
+                    await handle_internet_query(original_query)
+            else:
+                await cl.Message(
+                    content="⚠️ Aucune URL Wikipedia détectée. Je vais faire une recherche Internet à la place."
+                ).send()
+                await handle_internet_query(original_query)
+
+        case "LLM" | _:
+            # We consider the LLM tool as default
+            response = await llama_cpp.chat(messages=[
+                {"role": "system", "content": "Tu es un assistant utile qui répond aux questions de manière conversationnelle."},
+                {"role": "user", "content": original_query}
+            ])
+            await cl.Message(content=response).send()
+
+        
 
 # Add cleanup function for the internet search tool and temporary files
 @cl.on_chat_end
