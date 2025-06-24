@@ -17,7 +17,7 @@ class RAGTool:
     store embeddings, and perform similarity searches.
     """
     
-    def __init__(self, knowledge_base_path: str = "knowledge_base.pkl"):
+    def __init__(self, knowledge_base_path: str = "knowledge_base.pkl", model_caller: ModelCaller = None):
         """
         Initialize the RAG tool.
         
@@ -26,7 +26,7 @@ class RAGTool:
             embedding_model: Name of the sentence transformer model for embeddings
         """
         self.storage = PickleStorage(knowledge_base_path)
-        self.model_caller = ModelCaller()
+        self.model_caller = model_caller or ModelCaller()
         # Get all candidate files
         all_files = list(filter(lambda p: p.endswith((".pdf", ".docx", ".pptx")), map(os.path.join, ["docs"], os.listdir("docs"))))
         # Get already processed file paths from storage
@@ -150,40 +150,27 @@ class RAGTool:
         return results
     
     async def query_with_context(self, 
-                                query: str, 
-                                additional_context: str = "",
+                                query: str,
                                 k: int = 5,
-                                system_prompt: str = None) -> str:
+                                attachments: List[Dict[str, Any]] = None,
+                                system_prompt: str = None,
+                                chat_history: list = None) -> str:
         """
         Query the knowledge base and generate a response using the LLM.
         
         Args:
             query: The user's query
-            additional_context: Additional context to include in the query
             k: Number of top similar documents to retrieve
             system_prompt: Custom system prompt for the LLM
             
         Returns:
             The LLM's response
         """
-        # Get relevant documents from knowledge base
-        results = await self.similarity_search(query, k=k)
-        
         # Format the results into context
         context = "\n".join([
-            f"Document: {result['document']}\nMetadata: {result['metadata']}" 
-            for result in results
+            f"Document: {attachment['document']}\nMetadata: {attachment['metadata']}" 
+            for attachment in attachments
         ])
-        
-        # Prepare the full query with context
-        full_query = query
-        if additional_context:
-            full_query = f"""{query}
-
-Additional Context:
-{additional_context}
-"""
-        
         # Use default system prompt if none provided
         if system_prompt is None:
             system_prompt = (
@@ -191,15 +178,16 @@ Additional Context:
                 "les documents fournis. Utilise en priorité les documents fournis "
                 "et ensuite les documents de la base de connaissances."
             )
-        
+        # Inject chat history if provided
+        messages = []
+        if chat_history:
+            messages.extend(chat_history)
+        messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": f"Knowledge base: {context}\n\nQuery: {query}"})
         # Call the LLM
         response = await self.model_caller.chat(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Knowledge base: {context}\n\nQuery: {full_query}"}
-            ]
+            messages=messages
         )
-        
         return response
     
     def get_knowledge_base_stats(self) -> Dict[str, Any]:

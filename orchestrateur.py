@@ -8,23 +8,27 @@ from tools.internet_search_tool import InternetSearchTool
 import json 
 
 # Initialize the llm caller
-llama_cpp = ModelCaller()
+model_caller = ModelCaller()
 
 # Initialize tools
-rag_tool = RAGTool(knowledge_base_path="knowledge_base.pkl")
-internet_search_tool = InternetSearchTool()
+rag_tool = RAGTool(knowledge_base_path="knowledge_base.pkl", model_caller=model_caller)
+internet_search_tool = InternetSearchTool(model_caller=model_caller)
+
+# Global chat history: list of dicts {"role": "user"|"assistant", "content": ...}
+chat_history = []
 
 
 @cl.on_chat_start
 async def on_start():
     # Set a system prompt (context) for the assistant
     await cl.Message(
-        content="Bienvenue ! Je suis votre assistant IA. Je peux répondre à vos questions en utilisant ma base de connaissances ou en recherchant sur Internet.\n\n📄 **Pour télécharger des documents :**\n- Glissez-déposez vos fichiers dans le chat\n- Ou tapez `/upload` pour sélectionner des fichiers\n\n🔍 **Formats supportés :** PDF, DOCX, PPTX"
+        content="Bienvenue ! Je suis votre assistant IA. Je peux répondre à vos questions en utilisant ma base de connaissances ou en recherchant sur Internet.\n\n"
     ).send()
 
 
 async def handle_rag_query(query: str):
     """Handle queries using the RAG tool"""
+    global chat_history
     try:
         # Get knowledge base stats first
         stats = rag_tool.get_knowledge_base_stats()
@@ -40,18 +44,17 @@ async def handle_rag_query(query: str):
         results = await rag_tool.similarity_search(query, k=5)
         
         # Use RAG tool to get response
-        response = await rag_tool.query_with_context(query, k=5)
+        # Only keep the last N turns (e.g., 5), and only user/assistant roles
+        history_to_inject = chat_history[-10:] if len(chat_history) > 0 else []
+        response = await rag_tool.query_with_context(query, k=5, attachments=results, chat_history=history_to_inject)
         
         # Extract unique source files from results
         unique_files = {}
-        print(f"[RAG Debug] Found {len(results)} similarity results")
         
         for result in results:
             metadata = result.get('metadata', {})
             file_name = metadata.get('file_name')
             file_path = metadata.get('file_path')
-            
-            print(f"[RAG Debug] Result metadata: file_name={file_name}, file_path={file_path}")
             
             if file_name and file_path:
                 unique_files[file_name] = file_path
@@ -64,23 +67,21 @@ async def handle_rag_query(query: str):
             try:
                 # Check if file exists before creating element
                 import os
-                print(f"[RAG Debug] Checking file: {file_path}, exists: {os.path.exists(file_path)}")
                 
                 if os.path.exists(file_path):
                     elements.append(cl.File(name=file_name, path=file_path))
-                    print(f"[RAG Debug] Added file element: {file_name}")
                 else:
-                    print(f"[RAG] Source file not found: {file_path}")
                     # Try to find the file in temp_uploads directory
                     temp_path = os.path.join(os.getcwd(), "temp_uploads", file_name)
                     if os.path.exists(temp_path):
                         elements.append(cl.File(name=file_name, path=temp_path))
-                        print(f"[RAG Debug] Found file in temp_uploads: {temp_path}")
             except Exception as e:
                 print(f"[RAG] Error creating file element for {file_name}: {e}")
         
-        print(f"[RAG Debug] Created {len(elements)} file elements")
         await cl.Message(content=response, elements=elements).send()
+        # Update chat history: add user query and assistant answer
+        chat_history.append({"role": "user", "content": query})
+        chat_history.append({"role": "assistant", "content": response})
         
     except Exception as e:
         print(f"[RAG Tool Error] {str(e)}")
@@ -92,18 +93,24 @@ async def handle_rag_query(query: str):
 
 async def handle_internet_query(query: str):
     """Handle queries using the Internet Search tool"""
+    global chat_history
     try:
         await cl.Message(content="🔍 Recherche en cours sur Internet...").send()
         
         
         # Use internet search tool to get summarized response
+        # Inject chat history (user/assistant turns) before the current query
+        history_to_inject = chat_history[-10:] if len(chat_history) > 0 else []
         response = await internet_search_tool.generate_answer_from_web(
             query,
             num_results=5,
-            num_extract=3
+            num_extract=3,
+            chat_history=history_to_inject
         )
-        
         await cl.Message(content=response).send()
+        # Update chat history: add user query and assistant answer
+        chat_history.append({"role": "user", "content": query})
+        chat_history.append({"role": "assistant", "content": response})
         
     except Exception as e:
         print(f"[Internet Search Error] {str(e)}")
@@ -114,11 +121,12 @@ async def handle_internet_query(query: str):
 
 async def handle_wikipedia_scrap(query: str, wikipedia_url: str):
     """Handle Wikipedia content extraction"""
+    global chat_history
     try:
         await cl.Message(content="📖 Extraction du contenu Wikipedia en cours...").send()
         
         # Extract content from Wikipedia URL
-        content = await internet_search_tool.extract_content(wikipedia_url, max_chars=5000)
+        content = await internet_search_tool.extract_webpage_text(wikipedia_url, max_chars=5000)
         
         if content['content'] and len(content['content']) > 50:
             # Use the extracted content to answer the query
@@ -128,12 +136,17 @@ async def handle_wikipedia_scrap(query: str, wikipedia_url: str):
                 "basée sur les informations extraites."
             )
             
-            response = await llama_cpp.chat(messages=[
+            # Inject chat history (user/assistant turns) before the current query
+            history_to_inject = chat_history[-10:] if len(chat_history) > 0 else []
+            messages = history_to_inject + [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Contenu Wikipedia:\n{content['content']}\n\nQuestion: {query}"}
-            ])
-            
+            ]
+            response = await model_caller.chat(messages=messages)
             await cl.Message(content=f"{response}\n\n**Source:** {wikipedia_url}").send()
+            # Update chat history: add user query and assistant answer
+            chat_history.append({"role": "user", "content": query})
+            chat_history.append({"role": "assistant", "content": response})
         else:
             await cl.Message(
                 content="Je n'ai pas pu extraire le contenu de cette page Wikipedia. Laissez-moi faire une recherche Internet."
@@ -172,7 +185,7 @@ async def main(message: cl.Message):
         "Ne donne aucune autre information que ce JSON."
     )
     
-    response = await llama_cpp.chat(messages=[
+    response = await model_caller.chat(messages=[
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": orchestrator_query}
     ])
@@ -216,23 +229,30 @@ async def main(message: cl.Message):
 
         case "LLM" | _:
             # We consider the LLM tool as default
-            response = await llama_cpp.chat(messages=[
-                {"role": "system", "content": "Tu es un assistant utile qui répond aux questions de manière conversationnelle."},
+            # Inject chat history (user/assistant turns) before the current query
+            history_to_inject = chat_history[-10:] if len(chat_history) > 0 else []
+            messages = [
+                {"role": "system", "content": "Tu es un assistant utile qui répond aux questions de manière conversationnelle. N'utilisa pas d'émojies."},
+            ] + history_to_inject + [
                 {"role": "user", "content": original_query}
-            ])
+            ]
+            response = await model_caller.chat(messages=messages)
             await cl.Message(content=response).send()
-
-        
+            # Update chat history: add user query and assistant answer
+            chat_history.append({"role": "user", "content": original_query})
+            chat_history.append({"role": "assistant", "content": response})
 
 # Add cleanup function for the internet search tool and temporary files
 @cl.on_chat_end
 async def on_chat_end():
     """Cleanup when chat session ends"""
+    global chat_history
     try:
         await internet_search_tool.close()
     except:
         pass
-    
+    # Clean up chat history
+    chat_history.clear()
     # Clean up temporary uploaded files
     try:
         import os

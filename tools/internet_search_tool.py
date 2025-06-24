@@ -18,11 +18,11 @@ class InternetSearchTool:
     Supports multiple search engines and content extraction.
     """
     
-    def __init__(self):
+    def __init__(self, model_caller: ModelCaller = None):
         """
         Initialize the Internet Search tool.
         """
-        self.model_caller = ModelCaller()
+        self.model_caller = model_caller or ModelCaller()
         self.session = None
 
     async def _get_http_session(self) -> httpx.AsyncClient:
@@ -165,7 +165,8 @@ class InternetSearchTool:
                                   query: str, 
                                   num_results: int = 5,
                                   num_extract: int = 3,
-                                  custom_prompt: str = None) -> str:
+                                  custom_prompt: str = None,
+                                  chat_history: list = None) -> str:
         """
         Search the internet and provide a summarized answer using LLM.
         
@@ -174,7 +175,7 @@ class InternetSearchTool:
             num_results: Number of search results to get
             num_extract: Number of pages to extract content from
             custom_prompt: Custom system prompt for the LLM
-            
+            chat_history: List of previous user/assistant turns (optional)
         Returns:
             Summarized answer from the LLM
         """
@@ -201,18 +202,20 @@ Content: {content['content'][:2000]}...
                 "Tu es un assistant expert qui analyse et synthétise l'information provenant de sources Internet. "
                 "Ta tâche est de créer un condensé pertinent et structuré des informations les plus importantes "
                 "trouvées dans les sources fournies. Concentre-toi sur les points clés, les faits essentiels "
-                "et les informations les plus récentes ou significatives. "
+                "et les informations les plus récentes ou significatives. Je veux une réponse concise qui prend en compte toute les sources fournies. Je veux ne veux pas que tu itères sur les sources, mais que tu les utilises pour construire une réponse complète."
                 "Termine toujours ta réponse en citant clairement toutes les sources utilisées avec leurs URLs."
             )
         
+        # Inject chat history if provided
+        messages = []
+        if chat_history:
+            messages.extend(chat_history)
+        messages.append({"role": "system", "content": custom_prompt})
+        messages.append({"role": "user", "content": f"Sources Internet:\n{context}\n\nQuestion: {query}"})
         # Generate summary using LLM
         response = await self.model_caller.chat(
-            messages=[
-                {"role": "system", "content": custom_prompt},
-                {"role": "user", "content": f"Sources Internet:\n{context}\n\nQuestion: {query}"}
-            ]
+            messages=messages
         )
-        
         return response
     
     async def close(self):
